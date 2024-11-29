@@ -24,6 +24,7 @@ Queue pool_queue("Fronta na bazének");
 // Histogramy a statistiky
 Histogram arrivals_per_hour("Příchody za hodinu", 0, 60, 8); // Rozdělení příchodů
 
+Stat waiting_lockers("Čekání na skříňky");
 Stat waiting_reception("Čekání na recepci"); // Čekací doby
 Stat waiting_sauna("Čekání na saunu"); // Čekací doby
 Stat waiting_pool("Čekání na bazén"); // Čekací doby
@@ -51,6 +52,19 @@ class Customer : public Process {
         customers_in++; // Zákazník vstoupil do systému
         ArrivalTime = Time; // Uložení času příchodu
         arrivals_per_hour(Time);
+
+        // Kontrola volných skříněk
+        double locker_wait_start_time = Time; // Začátek čekání na volnou skříňku
+        while (lockers.Full()) {
+            Wait(Uniform(1, 5)); // Zákazník čeká, než se skříňka uvolní
+        }
+        double locker_wait_time = Time - locker_wait_start_time; // Celkový čas čekání na skříňku
+        if (locker_wait_time > 0) {
+            waiting_lockers(locker_wait_time); // Záznam čekací doby
+        } else {
+            Print("Warning: Negative locker wait time at time %f\n", Time);
+        }
+
 
         // Recepce
         if (reception.Busy()) {
@@ -238,6 +252,8 @@ int main() {
     sauna.Output();        // Výstupy pro saunu
     pool.Output();         // Výstupy pro bazének
     arrivals_per_hour.Output(); // Výstupy pro příchody za hodinu
+    
+    waiting_lockers.Output();     // Výstupy pro čekací doby
     waiting_reception.Output();     // Výstupy pro čekací doby
     waiting_sauna.Output();     // Výstupy pro čekací doby
     waiting_pool.Output();     // Výstupy pro čekací doby
