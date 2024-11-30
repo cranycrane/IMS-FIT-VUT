@@ -13,6 +13,9 @@ SRC = sauna.cpp
 $(TARGET): $(SRC)
 	$(CXX) $(CXXFLAGS) $(SRC) -o $(TARGET) $(LDFLAGS)
 
+improved: $(TARGET)
+	./$(TARGET) -s 5
+
 # Vyčištění vytvořených souborů
 clean:
 	rm -f $(TARGET)
