@@ -1,4 +1,5 @@
 #include <simlib.h>
+#include <stdexcept>
 
 #define Norm(a, b) (std::max(0.0, Normal(a, b)))
 
@@ -10,9 +11,9 @@ int customers_out = 0; // Počet zákazníků, kteří systém opustili
 // Definice obslužných zařízení
 Facility reception("Recepce");
 
-Store lockers("Šatna", 30);
-Store showers("Sprchy", 2);
-Store sauna("Sauna", 8);
+Store lockers("Šatna", 20);
+Store showers("Sprchy", 3);
+Store sauna("Sauna", 12);
 Store pool("Bazének", 5);
 Store rest_loungers("Odpočinková lehátka", 10);
 
@@ -33,12 +34,12 @@ Histogram showers_skipped("Počty přeskočených sprch", 0, 60, 8); // Interval
 
 // Funkce pro výpočet průměrného intervalu mezi příchody
 double ArrivalInterval(double currentTime) {
-    if (currentTime >= 12 * 60 && currentTime < 14 * 60) { // 12:00 - 14:00
-        return Exponential(5); // Delší interval
-    } else if (currentTime >= 17 * 60 && currentTime < 20 * 60) { // 17:00 - 20:00
-        return Exponential(20); // Kratší interval
+    if (currentTime < 3 * 60) { // První tři hodiny otvíračky - 14:00-17:00
+        return Exponential(10);
+    } else if (currentTime >= 3 * 60) { // Poslední tři hodiny otvíračky - 17:00-20:00
+        return Exponential(6); 
     } else {
-        return Exponential(3); // Standardní interval
+        throw std::invalid_argument( "ArrivalInterval out of expected interval" );
     }
 }
 
@@ -59,10 +60,10 @@ class Customer : public Process {
             Wait(Uniform(1, 5)); // Zákazník čeká, než se skříňka uvolní
         }
         double locker_wait_time = Time - locker_wait_start_time; // Celkový čas čekání na skříňku
-        if (locker_wait_time > 0) {
+        if (locker_wait_time >= 0) {
             waiting_lockers(locker_wait_time); // Záznam čekací doby
         } else {
-            Print("Warning: Negative locker wait time at time %f\n", Time);
+            Print("Warning: Negative locker wait time at time %f, waitTime: %f\n", Time, locker_wait_time);
         }
 
 
@@ -102,7 +103,7 @@ class Customer : public Process {
 
             if (remaining_time < 15) {
                 // Rozhodování o pokračování
-                if (Random() < 0.15) { // 30% pravděpodobnost, že zůstane déle
+                if (Random() < 0.10) { // 30% pravděpodobnost, že zůstane déle
                     ExtraTime += remaining_time; // Zákazník se rozhodl zůstat
                 } else {
                     // Odchod do šatny a opuštění systému
@@ -252,7 +253,7 @@ int main() {
     sauna.Output();        // Výstupy pro saunu
     pool.Output();         // Výstupy pro bazének
     arrivals_per_hour.Output(); // Výstupy pro příchody za hodinu
-    
+
     waiting_lockers.Output();     // Výstupy pro čekací doby
     waiting_reception.Output();     // Výstupy pro čekací doby
     waiting_sauna.Output();     // Výstupy pro čekací doby
