@@ -11,8 +11,8 @@ int customers_in = 0;  // Počet zákazníků, kteří vstoupili do systému
 int customers_out = 0; // Počet zákazníků, kteří systém opustili
 
 // Výchozí hodnoty
-int peak_arrivals = 6;  // Počet příchodů ve špičce
-int normal_arrivals = 8; // Počet příchodů v normálním čase
+double peak_arrivals = 6;  // Počet příchodů ve špičce
+double normal_arrivals = 8; // Počet příchodů v normálním čase
 int locker_count = 25;   // Počet skříněk
 int shower_count = 3;    // Počet sprch
 int sauna_capacity = 15; // Kapacita sauny
