@@ -5,47 +5,44 @@
 
 #define Norm(a, b) (std::max(0.0, Normal(a, b)))
 
-// Konstanty a globální proměnné
-const int SIMULATION_TIME = 8*60; // Simulace na 8 hodin
-int customers_in = 0;  // Počet zákazníků, kteří vstoupili do systému
-int customers_out = 0; // Počet zákazníků, kteří systém opustili
+// Global variables
+const int SIMULATION_TIME = 8*60; // 8 hours
+int customers_in = 0;  
+int customers_out = 0; 
 
-// Výchozí hodnoty
-double peak_arrivals = 6;  // Počet příchodů ve špičce
-double normal_arrivals = 8; // Počet příchodů v normálním čase
-int locker_count = 25;   // Počet skříněk
-int shower_count = 3;    // Počet sprch
-int sauna_capacity = 15; // Kapacita sauny
-int pool_capacity = 5;   // Kapacita bazénku
-int lounger_count = 10;  // Počet lehátek
+// Default values
+double peak_arrivals = 6;  
+double normal_arrivals = 8; 
+int locker_count = 25;   
+int shower_count = 3;    
+int sauna_capacity = 15; 
+int pool_capacity = 5;   
+int lounger_count = 10;  
 
-// Definice obslužných zařízení
 Store *lockers;
 Store *showers;
 Store *sauna;
 Store *pool;
 Store *rest_loungers;
-
 Facility *reception;
-
 
 Queue reception_queue("Fronta na recepci");
 Queue sauna_queue("Fronta na saunu");
 Queue pool_queue("Fronta na bazének");
 
 
-// Histogramy a statistiky
-Histogram arrivals_per_hour("Příchody za hodinu", 0, 60, 8); // Rozdělení příchodů
+// Histograms and statistics
+Histogram arrivals_per_hour("Příchody za hodinu", 0, 60, 8); 
 
 Stat waiting_lockers("Čekání na skříňky");
-Stat waiting_reception("Čekání na recepci"); // Čekací doby
-Stat waiting_sauna("Čekání na saunu"); // Čekací doby
-Stat waiting_pool("Čekání na bazén"); // Čekací doby
-Stat waiting_rest("Čekání na lehátko"); // Čekací doby
+Stat waiting_reception("Čekání na recepci"); 
+Stat waiting_sauna("Čekání na saunu"); 
+Stat waiting_pool("Čekání na bazén"); 
+Stat waiting_rest("Čekání na lehátko"); 
 
-Histogram showers_skipped("Počty přeskočených sprch", 0, 60, 8); // Intervaly 60 minut, 16 intervalů pro 16 hodin
+Histogram showers_skipped("Počty přeskočených sprch", 0, 60, 8);
 
-// Funkce pro výpočet průměrného intervalu mezi příchody
+// calculate arrival interval depending on peak/normal time
 double ArrivalInterval(double currentTime) {
     if (currentTime < 3 * 60) { // 14:00-17:00
         return Exponential(normal_arrivals);
@@ -56,170 +53,155 @@ double ArrivalInterval(double currentTime) {
     }
 }
 
-// Proces zákazníka
 class Customer : public Process {
-    double ArrivalTime; // Atribut pro uložení času příchodu
-    const double MAX_TIME = 90; // Limit času (v minutách)
-    double ExtraTime = 0;      // Přesčasový čas (v minutách)
+    double ArrivalTime; 
+    const double MAX_TIME = 90; 
+    double ExtraTime = 0;      
 
     void Behavior() override {
-        customers_in++; // Zákazník vstoupil do systému
-        ArrivalTime = Time; // Uložení času příchodu
+        customers_in++; 
+        ArrivalTime = Time; 
         arrivals_per_hour(Time);
 
-        // Kontrola volných skříněk
-        double locker_wait_start_time = Time; // Začátek čekání na volnou skříňku
+        // Lockers
+        // Check free lockers and wait if no free
+        double locker_wait_start_time = Time;
         while (lockers->Full()) {
-            Wait(Uniform(1, 2)); // Zákazník čeká, než se skříňka uvolní
+            Wait(Uniform(1, 2)); 
         }
-        double locker_wait_time = Time - locker_wait_start_time; // Celkový čas čekání na skříňku
+        double locker_wait_time = Time - locker_wait_start_time; 
         if (locker_wait_time >= 0) {
-            waiting_lockers(locker_wait_time); // Záznam čekací doby
-        } else {
-            Print("Warning: Negative locker wait time at time %f, waitTime: %f\n", Time, locker_wait_time);
-        }
+            waiting_lockers(locker_wait_time); // Log the waitting time
+        } 
 
 
-        // Recepce
+        // Reception
         if (reception->Busy()) {
             double queue_start_time = Time;
-            reception_queue.Insert(this); // Zařadíme do fronty
-            Passivate();                 // Čekáme na uvolnění
+            reception_queue.Insert(this); // Go to queue
+            Passivate();                 // Wait until free
             if (Time - queue_start_time > 0) {
                 waiting_reception(Time - queue_start_time);
             } else {
                 Print("Warning: Negative waiting time at time %f\n", Time);
             }
         }
-        Seize(*reception);               // Obsazení recepce
-        Wait(Norm(2, 1));             // Simulace obsluhy
-        Release(*reception);             // Uvolnění recepce
+        Seize(*reception);               
+        Wait(Uniform(2, 3));             
+        Release(*reception);             
 
-        // Aktivujeme dalšího zákazníka z fronty, pokud existuje
+        // Activate another customer in queue
         if (!reception_queue.Empty()) {
             Process *next_customer = static_cast<Process *>(reception_queue.GetFirst());
             next_customer->Activate();
         }
 
-
-        // Šatna
+        // Enter in lockers
         Enter(*lockers, 1);
         Wait(Norm(5, 2)); 
 
-        // Sprchy
+        // Take a shower
         showersOrSkip(Norm(3, 3));
 
+        // Lets start wellness procedure
         while (true) {
-            // Zjistíme zbývající čas
             double time_spent = Time - ArrivalTime;
             double remaining_time = MAX_TIME - time_spent;
 
             if (remaining_time < 15) {
-                // Rozhodování o pokračování
-                if (Random() < 0.10) { // 30% pravděpodobnost, že zůstane déle
-                    ExtraTime += remaining_time; // Zákazník se rozhodl zůstat
+                // Can decide to stay longer with 10% prob
+                if (Random() < 0.10) { 
+                    ExtraTime += remaining_time; 
                 } else {
-                    // Odchod do šatny a opuštění systému
+                    // Back to lockers and leaving system
                     Wait(Uniform(3, 6));
                     Leave(*lockers, 1);
                     break;
                 }
             }
 
-            // Kolečko wellness aktivit
             PerformWellnessActivities();
         }
 
-
-
-        // Zákazník opouští systém
-        customers_out++; // Zákazník opustil systém
-        // waiting_times(Time - ArrivalTime); // Záznam čekací doby
+        customers_out++; 
     }
 
   void PerformWellnessActivities() {
         // Sauna
         if (sauna->Free() > 0) {
-            // Kapacita volná, vstup přímo do sauny
             sauna->Enter(this, 1);
         } else {
             double queue_start_time = Time;
-            // Kapacita plná, zařadit do fronty
+            // Full, going to queue
             sauna_queue.Insert(this);
-            Passivate(); // Čekání na volné místo
+            Passivate(); 
             sauna->Enter(this, 1);
-            waiting_sauna(Time - queue_start_time);
-
+            waiting_sauna(Time - queue_start_time); // log waitting time
         }
 
-        Wait(Norm(15,5)); // Průměrná doba obsluhy: 15 minut
-        sauna->Leave(1); // Uvolnění kapacity
+        Wait(Norm(15,5)); // take a sauna
+        sauna->Leave(1); 
 
-        // Pokud je někdo ve frontě, aktivovat dalšího
+        // active next in queue
         if (!sauna_queue.Empty()) {
             Process *next_customer = static_cast<Process *>(sauna_queue.GetFirst());
             next_customer->Activate();
         }
 
-
         double pool_or_shower = Random();
 
-        // rozhoduje se zda se ochladí v bazénku nebo sprše
-        if (pool_or_shower <= 0.5) // bazenek
+        // go to pool or shower with 50/50 prob
+        if (pool_or_shower <= 0.5) // pool
         {
+            // just a quick shower
             showersOrSkip(Norm(1, 1));
 
-            // Bazének
             if (pool->Free() > 0) {
-                // Kapacita volná, vstup přímo do sauny
                 pool->Enter(this, 1);
             } else {
                 double queue_start_time = Time;
-                // Kapacita plná, zařadit do fronty
                 pool_queue.Insert(this);
-                Passivate(); // Čekání na volné místo
+                Passivate(); 
                 pool->Enter(this, 1);
                 waiting_pool(Time - queue_start_time);
             }
 
-            Wait(Triag(2.5,0.5,5)); // Průměrná doba obsluhy: 5 minut
-            pool->Leave(1); // Uvolnění kapacity
+            Wait(Triag(2.5,0.5,5)); // triag waitting
+            pool->Leave(1); 
 
-            // Pokud je někdo ve frontě, aktivovat dalšího
             if (!pool_queue.Empty()) {
                 Process *next_customer = static_cast<Process *>(pool_queue.GetFirst());
                 next_customer->Activate();
             }
         }
-        else // sprcha
+        else // shower instead of pool
         {
             showersOrSkip(Norm(4, 2));
         }
 
-        // Generování času odpočinku
+        // Generate rest time
         double rest_time = Norm(12, 5);
-        double standing_start_time = Time; // Začátek stání
+        double standing_start_time = Time; 
 
         while (Time - standing_start_time < rest_time) {
             if (rest_loungers->Free() > 0) {
-                // Zaznamenání doby čekání do statistiky
+                // log waitting for loungers
                 waiting_rest(Time - standing_start_time);
 
-                // Volné lehátko, zákazník si ho zabere
                 rest_loungers->Enter(this, 1);
                 double remaining_rest_time = rest_time - (Time - standing_start_time);
                 if (remaining_rest_time > 0) {
-                    Wait(remaining_rest_time); // Dokončení odpočinku na lehátku
+                    Wait(remaining_rest_time); // finish rest time
                 }
-                rest_loungers->Leave(1); // Uvolnění lehátka
+                rest_loungers->Leave(1);
                 break;
             } else {
-                // Stojí a čeká, ale jen dokud má smysl
+                // Standing and waitting until lounger free
                 double remaining_stand_time = rest_time - (Time - standing_start_time);
                 if (remaining_stand_time <= 0) {
-                    // Zaznamenání celkové doby čekání (bez lehátka)
+                    // log the whole time standing
                     waiting_rest(Time - standing_start_time);
-                    break; // Pokud už není čas na další čekání
+                    break; 
                 }
                 Wait(std::min(Uniform(0.1, 0.5), remaining_stand_time));
             }
@@ -234,7 +216,7 @@ class Customer : public Process {
             Wait(dtime); 
             Leave(*showers, 1);
         }
-        else // sprchy obsazene, skipuju
+        else // showers full, skipping
         {
             showers_skipped(Time);
         }
@@ -242,16 +224,15 @@ class Customer : public Process {
   }
 };
 
-// Generátor příchodů zákazníků
 class Generator : public Event {
     void Behavior() override {
-        // Spočítáme čas pro poslední možný příchod
-        const double LAST_ENTRY_TIME = SIMULATION_TIME - 90; // 90 minut před koncem simulace
+        // No visitors 90 minutes before end
+        const double LAST_ENTRY_TIME = SIMULATION_TIME - 90;
 
-        double nextArrivalInterval = ArrivalInterval(Time); // Generujeme kladný interval
+        double nextArrivalInterval = ArrivalInterval(Time);
         if (Time + nextArrivalInterval < LAST_ENTRY_TIME) {
             (new Customer)->Activate();
-            Activate(Time + nextArrivalInterval); // Naplánujeme další příchod
+            Activate(Time + nextArrivalInterval);
         } else {
             Print("Generátor ukončen: Čas=%f, Interval=%f\n", Time, nextArrivalInterval);
         }
@@ -259,17 +240,16 @@ class Generator : public Event {
 };
 
 
-// Hlavní funkce simulace
 int main(int argc, char *argv[]) {
-    // Zpracování argumentů příkazového řádku
+    // get command line arguments
     int opt;
     while ((opt = getopt(argc, argv, "p:n:l:s:a:b:r:")) != -1) {
         switch (opt) {
             case 'p':
-                peak_arrivals = std::stoi(optarg);
+                peak_arrivals = std::stod(optarg);
                 break;
             case 'n':
-                normal_arrivals = std::stoi(optarg);
+                normal_arrivals = std::stod(optarg);
                 break;
             case 'l':
                 locker_count = std::stoi(optarg);
@@ -301,32 +281,28 @@ int main(int argc, char *argv[]) {
     rest_loungers = new Store("Odpočinková lehátka", lounger_count);
     reception = new Facility("Recepce");
 
-    // Inicializace simulace
-    Init(0, SIMULATION_TIME); // Simulace od 0 do SIMULATION_TIME (960 minut)
+    Init(0, SIMULATION_TIME); 
 
-    // Aktivace generátoru příchodů
     (new Generator)->Activate();
 
-    // Spuštění simulace
     Run();
 
-    // Výstupy
+    // Outputs
     reception->Output();
-    lockers->Output();  // Výstupy pro šatnu
-    showers->Output();      // Výstupy pro sprchy
-    sauna->Output();        // Výstupy pro saunu
-    pool->Output();         // Výstupy pro bazének
-    rest_loungers->Output();         // Výstupy pro bazének
-    arrivals_per_hour.Output(); // Výstupy pro příchody za hodinu
+    lockers->Output();  
+    showers->Output();  
+    sauna->Output();    
+    pool->Output();     
+    rest_loungers->Output();         
+    arrivals_per_hour.Output(); 
 
-    waiting_lockers.Output();     // Výstupy pro čekací doby
-    waiting_reception.Output();     // Výstupy pro čekací doby
-    waiting_sauna.Output();     // Výstupy pro čekací doby
-    waiting_pool.Output();     // Výstupy pro čekací doby
-    waiting_rest.Output();     // Výstupy pro čekací doby
+    waiting_lockers.Output();   
+    waiting_reception.Output(); 
+    waiting_sauna.Output();    
+    waiting_pool.Output();    
+    waiting_rest.Output();    
     showers_skipped.Output();
 
-    // Výpis počtu zákazníků
     Print("Počet zákazníků, kteří vstoupili do systému: %d\n", customers_in);
     Print("Počet zákazníků, kteří opustili systém: %d\n", customers_out);
 

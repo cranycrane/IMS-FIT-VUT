@@ -1,21 +1,21 @@
-# Název binárního souboru
 TARGET = sauna
 
-# Kompilátor a jeho příznaky
 CXX = g++
 CXXFLAGS = -g -O0 -std=c++11 -Wall -Wextra -pedantic
 LDFLAGS = -lsimlib -lm
 
-# Zdrojové soubory
 SRC = sauna.cpp
 
-# Pravidlo pro sestavení binárního souboru
 $(TARGET): $(SRC)
 	$(CXX) $(CXXFLAGS) $(SRC) -o $(TARGET) $(LDFLAGS)
 
 improved: $(TARGET)
 	./$(TARGET) -s 5
 
-# Vyčištění vytvořených souborů
+pack:
+	tar -czvf 09_xjerab28_xteich02.tar.gz $(SRC) Makefile dokumentace.pdf
+
 clean:
 	rm -f $(TARGET)
+
+
